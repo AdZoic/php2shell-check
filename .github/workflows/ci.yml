@@ -3,7 +3,7 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["v*.*.*"] # full versions only; the moving major tag (v1) must not release
   pull_request:
 
 permissions:
