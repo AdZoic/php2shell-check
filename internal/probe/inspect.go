@@ -3,6 +3,7 @@ package probe
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,6 +28,9 @@ func Inspect(ctx context.Context, t target.Target, b Binary, directives []string
 	exe := b.RealPath
 	if exe == "" {
 		exe = b.Path
+	}
+	if b.SAPI == SAPIApache {
+		return inspectModule(ctx, t, exe, timeout)
 	}
 
 	var (
@@ -54,6 +58,48 @@ func Inspect(ctx context.Context, t target.Target, b Binary, directives []string
 		info, _ := t.Run(ictx, exe, infoArgs...)
 		cancel()
 		f.INI = ParsePHPInfo(string(info), directives)
+	}
+	return f
+}
+
+// maxModule caps how much of an Apache module we read; libphp.so is ~5-40 MiB.
+const maxModule = 256 << 20
+
+// poweredByRe finds the version PHP compiles into every build as the literal
+// "X-Powered-By: PHP/" PHP_VERSION, vendor suffix included ("8.1.2-1ubuntu2.20").
+var poweredByRe = regexp.MustCompile(`X-Powered-By: PHP/(\d+\.\d+\.\d+[0-9A-Za-z.+~-]*)`)
+
+// inspectModule determines a mod_php version without loading it: first from
+// the string compiled into the library, then from the owning OS package. INI
+// values stay unknown (they live in Apache's config), so mitigations are never
+// reported as applied for a module.
+func inspectModule(ctx context.Context, t target.Target, path string, timeout time.Duration) Facts {
+	var f Facts
+	// Reading tens of MiB out of a container takes longer than a php -v.
+	rctx, cancel := context.WithTimeout(ctx, 4*timeout)
+	data, err := t.ReadFile(rctx, path, maxModule)
+	cancel()
+	if err == nil {
+		if m := poweredByRe.FindSubmatch(data); m != nil {
+			if v, perr := version.Parse(string(m[1])); perr == nil {
+				f.Version = &v
+				return f
+			}
+		}
+	}
+	pctx, cancel := context.WithTimeout(ctx, timeout)
+	raw := PackageVersion(pctx, t, path)
+	cancel()
+	if raw != "" {
+		if v, perr := version.Parse(raw); perr == nil {
+			f.Version = &v
+			return f
+		}
+	}
+	if err != nil {
+		f.VersionErr = fmt.Sprintf("Apache module: %v", err)
+	} else {
+		f.VersionErr = "Apache module: no PHP version string found and not owned by a known package"
 	}
 	return f
 }

@@ -49,11 +49,11 @@ php2shell-check 1.0.0 - PHP2Shell (CVE-2026-109618, CVE-2026-109619)
 Fixed in: 8.2.35, 8.3.36, 8.4.27, 8.5.12
 
 host (linux/amd64)
-  VULNERABLE       fpm   8.4.10                 /usr/sbin/php-fpm8.4
+  VULNERABLE       fpm    8.4.10                 /usr/sbin/php-fpm8.4
       why: 8.4.10 < 8.4.27
       do:  Upgrade PHP 8.4 to 8.4.27 or later (OS vendor, php.net build or container base image).
       do:  Restart PHP-FPM / web server workers and rebuild container images afterwards.
-  PATCHED_BACKPORT cli   8.3.6                  /usr/bin/php8.3
+  PATCHED_BACKPORT cli    8.3.6                  /usr/bin/php8.3
   RESTART REQUIRED: 1 running process(es) still use a replaced PHP binary
       pid 1123    php-fpm8.4     /usr/sbin/php-fpm8.4
 
@@ -65,13 +65,15 @@ Result: VULNERABLE  (1 vulnerable, 1 patched_backport, 1 stale process(es))
 | Check | How | Why it matters |
 |---|---|---|
 | **Version** | `<php> -n -v` on every runtime binary found | The primary signal |
+| **Apache mod_php** | The version compiled into `libphp*.so` / `php*apache2_4.dll`, else the owning package's version | A server can run PHP only through Apache, with no `php` binary at all; it must never look like "no PHP" |
 | **Vendor back-ports** | dpkg / rpm changelog for the owning package | Ubuntu, Debian, RHEL patch without bumping `8.3.6`; version-only scanners give false alarms here |
 | **Stale workers** (Linux) | `/proc/*/exe` and `/proc/*/maps` for replaced `php-fpm` / `libphp.so` | Patched on disk but still running old code is the #1 post-patch mistake |
 | **Interim mitigations** | `php -i` + every FPM pool's `php_admin_value` overrides | Shows whether `session.upload_progress.enabled=0` (and `fatal_error_backtraces=0` on 8.5) is really in effect in *every* pool |
 
 **Discovery covers:** `$PATH`, distro packages, Docker official images, Remi, SCL, cPanel EA-PHP, Plesk,
 CloudLinux alt-php, LiteSpeed lsphp, aaPanel, FrankenPHP, Homebrew (Intel and Apple Silicon), MacPorts,
-MAMP, Herd, XAMPP, WAMP, Laragon, Scoop, WinGet and `C:\php`. Add anything else with `--path` (repeatable, globs allowed).
+MAMP, Herd, XAMPP, WAMP, Laragon, Scoop, WinGet and `C:\php`, plus Apache PHP modules in the Debian/Ubuntu, RHEL/Fedora,
+SUSE, cPanel, FreeBSD, Homebrew, MAMP and XAMPP module directories. Add anything else with `--path` (repeatable, globs allowed).
 
 ## Verdicts and exit codes
 
@@ -150,6 +152,8 @@ New advisories are data: add an `advisory.Advisory` value and the same scanner c
 - Shell-less (distroless) images are not supported yet; the scan reports a clear error.
 - The stale-worker check is Linux-only. On macOS and Windows, restart PHP after patching.
 - Alpine (`apk`) has no changelogs, so Alpine package builds are judged by version alone.
+- For Apache mod_php the INI mitigation is not read (it lives in Apache's config), so it is always shown as not
+  confirmed. A module whose version cannot be determined is reported `UNKNOWN`, never safe.
 - Windows containers are not supported in `image` mode.
 
 ## License

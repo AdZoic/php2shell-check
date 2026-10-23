@@ -148,6 +148,29 @@ func (RPM) Verify(ctx context.Context, t target.Target, bin string, _ *version.V
 	return bp, nil
 }
 
+// PackageVersion returns the upstream-plus-vendor version of the OS package
+// that owns path ("8.3.6-0ubuntu0.24.04.13"), or "" if no dpkg or rpm package
+// owns it. Debian epochs ("1:") are dropped; they are not part of PHP_VERSION.
+func PackageVersion(ctx context.Context, t target.Target, path string) string {
+	if out, err := t.Run(ctx, "dpkg-query", "-S", path); err == nil {
+		if pkg := ParseDpkgOwner(string(out)); pkg != "" {
+			if v, err := t.Run(ctx, "dpkg-query", "-W", "-f", "${Version}", pkg); err == nil {
+				raw := firstLine(string(v))
+				if i := strings.IndexByte(raw, ':'); i >= 0 {
+					raw = raw[i+1:]
+				}
+				return raw
+			}
+		}
+	}
+	if out, err := t.Run(ctx, "rpm", "-qf", "--queryformat", `%{VERSION}-%{RELEASE}\n`, path); err == nil {
+		if raw := firstLine(string(out)); raw != "" && !strings.Contains(raw, " ") {
+			return raw
+		}
+	}
+	return ""
+}
+
 // --- helpers -------------------------------------------------------------
 
 // cveRe matches CVE IDs including the combined shorthand Debian/Ubuntu use in

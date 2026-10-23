@@ -170,7 +170,7 @@ func Text(w io.Writer, meta Meta, reports []scan.Report, sum Summary, o TextOpti
 			if ver == "" {
 				ver = "?"
 			}
-			tw.printf("  %s %-5s %-22s %s\n", p.status(in.Verdict.Status), in.SAPI, ver, in.RealPath)
+			tw.printf("  %s %-6s %-22s %s\n", p.status(in.Verdict.Status), in.SAPI, ver, in.RealPath)
 			if sev == 0 && !o.Verbose {
 				continue
 			}

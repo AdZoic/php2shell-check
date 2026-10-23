@@ -415,3 +415,100 @@ func TestScanStaleProcesses(t *testing.T) {
 		t.Fatal("missing proc root must be unsupported")
 	}
 }
+
+func TestClassifyModules(t *testing.T) {
+	for _, name := range []string{"libphp.so", "libphp8.3.so", "libphp8.so", "libphp7.so", "mod_php8.so", "mod_php.so", "php8apache2_4.dll", "PHP7APACHE2_4.DLL"} {
+		if got, ok := ClassifyName(name); !ok || got != SAPIApache {
+			t.Errorf("ClassifyName(%q)=%q,%v want apache", name, got, ok)
+		}
+	}
+	for _, bad := range []string{"libphp.so.1", "libphp8.3.so.bak", "libphp-embed.so", "mod_phpx.so", "php8apache2_2.dll", "libphpcpp.so"} {
+		if _, ok := ClassifyName(bad); ok {
+			t.Errorf("%q must not be classified as a PHP runtime", bad)
+		}
+	}
+	for _, goos := range []string{"linux", "darwin", "windows", "freebsd"} {
+		if len(ModulePatterns(goos)) == 0 {
+			t.Errorf("no module patterns for %s", goos)
+		}
+	}
+}
+
+// A server that runs PHP only through Apache has no php binary. The module is
+// a plain (non-executable) file and must still be found.
+func TestDiscoverModuleOnly(t *testing.T) {
+	ft := &fakeTarget{
+		PathEnv: []string{"/usr/bin"},
+		Files:   map[string][]byte{"/usr/lib/apache2/modules/libphp8.1.so": nil, "/usr/lib/apache2/modules/mod_rewrite.so": nil},
+		Links:   map[string]string{"/usr/lib/apache2/modules/libphp.so": "/usr/lib/apache2/modules/libphp8.1.so"},
+	}
+	got, err := Discover(context.Background(), ft, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].SAPI != SAPIApache || got[0].RealPath != "/usr/lib/apache2/modules/libphp8.1.so" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestInspectModule(t *testing.T) {
+	ctx := context.Background()
+	lib := func(ver string) []byte {
+		return []byte("\x7fELF\x00junk\x00X-Powered-By: PHP/" + ver + "\x00more\x00")
+	}
+	none := func(string, []string) ([]byte, error) { return nil, errors.New("exit 1") }
+	mod := func(p string) Binary { return Binary{Path: p, RealPath: p, SAPI: SAPIApache} }
+
+	t.Run("embedded upstream version", func(t *testing.T) {
+		ft := &fakeTarget{Files: map[string][]byte{"/m/libphp.so": lib("8.4.24")}, RunFunc: none}
+		f := Inspect(ctx, ft, mod("/m/libphp.so"), []string{"session.upload_progress.enabled"}, time.Second)
+		if f.Version == nil || f.Version.String() != "8.4.24" || f.INI != nil {
+			t.Fatalf("%+v", f)
+		}
+	})
+	t.Run("embedded vendor version", func(t *testing.T) {
+		ft := &fakeTarget{Files: map[string][]byte{"/m/libphp8.1.so": lib("8.1.2-1ubuntu2.20")}, RunFunc: none}
+		f := Inspect(ctx, ft, mod("/m/libphp8.1.so"), nil, time.Second)
+		if f.Version == nil || f.Version.String() != "8.1.2-1ubuntu2.20" || !f.Version.HasVendorSuffix() {
+			t.Fatalf("%+v", f)
+		}
+	})
+	t.Run("dpkg fallback drops epoch", func(t *testing.T) {
+		ft := &fakeTarget{Files: map[string][]byte{"/m/libphp8.3.so": []byte("stripped")}, RunFunc: func(name string, args []string) ([]byte, error) {
+			switch {
+			case name == "dpkg-query" && args[0] == "-S":
+				return []byte("libapache2-mod-php8.3:amd64: /m/libphp8.3.so\n"), nil
+			case name == "dpkg-query" && args[0] == "-W" && args[len(args)-1] == "libapache2-mod-php8.3":
+				return []byte("1:8.3.6-0ubuntu0.24.04.13"), nil
+			}
+			return nil, errors.New("exit 1")
+		}}
+		f := Inspect(ctx, ft, mod("/m/libphp8.3.so"), nil, time.Second)
+		if f.Version == nil || f.Version.String() != "8.3.6-0ubuntu0.24.04.13" {
+			t.Fatalf("%+v", f)
+		}
+	})
+	t.Run("rpm fallback", func(t *testing.T) {
+		ft := &fakeTarget{RunFunc: func(name string, args []string) ([]byte, error) {
+			if name == "rpm" && args[0] == "-qf" {
+				return []byte("8.1.14-3.el9_4\n"), nil
+			}
+			return nil, errors.New("exit 1")
+		}}
+		f := Inspect(ctx, ft, mod("/usr/lib64/httpd/modules/libphp.so"), nil, time.Second)
+		if f.Version == nil || f.Version.String() != "8.1.14-3.el9_4" {
+			t.Fatalf("%+v", f)
+		}
+	})
+	t.Run("unknown fails closed", func(t *testing.T) {
+		ft := &fakeTarget{Files: map[string][]byte{"/m/libphp.so": []byte("no version here")}, RunFunc: none}
+		f := Inspect(ctx, ft, mod("/m/libphp.so"), nil, time.Second)
+		if f.Version != nil || !strings.Contains(f.VersionErr, "Apache module") {
+			t.Fatalf("%+v", f)
+		}
+		f = Inspect(ctx, &fakeTarget{RunFunc: none}, mod("/gone/libphp.so"), nil, time.Second)
+		if f.Version != nil || f.VersionErr == "" {
+			t.Fatalf("unreadable: %+v", f)
+		}
+	})
+}

@@ -189,3 +189,57 @@ func TestRunCancelled(t *testing.T) {
 		}
 	}
 }
+
+// modPHPOnly simulates a Debian box serving PHP only through Apache: no php
+// binary anywhere, one libphp per version.
+func modPHPOnly(files map[string][]byte, owners map[string]string) *targettest.Fake {
+	return &targettest.Fake{
+		PathEnv: []string{"/usr/bin"},
+		Execs:   map[string]bool{"/usr/sbin/apache2": true},
+		Files:   files,
+		RunFunc: func(name string, args []string) ([]byte, error) {
+			if name == "dpkg-query" && args[0] == "-S" {
+				if pkg, ok := owners[args[1]]; ok {
+					return []byte(pkg + ":amd64: " + args[1]), nil
+				}
+			}
+			return nil, errors.New("exit 1")
+		},
+	}
+}
+
+func TestRunModPHPOnlyNeverLooksSafe(t *testing.T) {
+	const lib = "/usr/lib/apache2/modules/libphp8.4.so"
+	cases := []struct {
+		name   string
+		files  map[string][]byte
+		owners map[string]string
+		want   advisory.Status
+	}{
+		{"upstream build below fix", map[string][]byte{lib: []byte("X-Powered-By: PHP/8.4.24\x00")}, nil, advisory.StatusVulnerable},
+		{"upstream build fixed", map[string][]byte{lib: []byte("X-Powered-By: PHP/8.4.27\x00")}, nil, advisory.StatusPatched},
+		{"version unknown", map[string][]byte{lib: []byte("stripped")}, nil, advisory.StatusUnknown},
+		{"debian back-port", map[string][]byte{
+			lib: []byte("X-Powered-By: PHP/8.4.11-1+deb13u2\x00"),
+			"/usr/share/doc/php8.4-common/changelog.Debian.gz": gz("php8.4 (8.4.11-1+deb13u2) trixie-security\n  * Fix CVE-2026-109618_109619\n"),
+		}, map[string]string{lib: "libapache2-mod-php8.4"}, advisory.StatusPatchedBackport},
+		{"debian build, docs stripped", map[string][]byte{lib: []byte("X-Powered-By: PHP/8.4.11-1+deb13u2\x00")},
+			map[string]string{lib: "libapache2-mod-php8.4"}, advisory.StatusUnverified},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rep, err := Run(context.Background(), modPHPOnly(c.files, c.owners), Options{
+				Advisory: advisory.PHP2Shell, Verifiers: probe.DefaultVerifiers("linux")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rep.Installations) != 1 {
+				t.Fatalf("mod_php must be found: %+v", rep.Installations)
+			}
+			in := rep.Installations[0]
+			if in.SAPI != probe.SAPIApache || in.Verdict.Status != c.want {
+				t.Fatalf("got %s %s (%v) want %s", in.SAPI, in.Verdict.Status, in.Verdict.Reasons, c.want)
+			}
+		})
+	}
+}

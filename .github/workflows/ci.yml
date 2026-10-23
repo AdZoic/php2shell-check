@@ -56,6 +56,11 @@ jobs:
           ./p2s image php:8.3-fpm php:8.4-fpm-alpine php:7.4-fpm --no-color || code=$?
           # 7.4 is end-of-life, so this must report vulnerable (exit 1).
           [ "${code:-0}" -eq 1 ]
+      - name: Scan an Apache mod_php image
+        run: |
+          ./p2s image php:8.4-apache --json > apache.json || true
+          # The module must be found and versioned, never skipped.
+          jq -e '[.targets[0].installations[] | select(.sapi == "apache" and .version != null)] | length == 1' apache.json
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
