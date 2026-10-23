@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download and verify release binary
         run: |
-          curl -fsSLO "$BASE/${{ matrix.asset }}" && curl -fsSLO "$BASE/SHA256SUMS"
+          curl --retry 5 --retry-all-errors -fsSLO "$BASE/${{ matrix.asset }}" && curl --retry 5 --retry-all-errors -fsSLO "$BASE/SHA256SUMS"
           grep " ${{ matrix.asset }}\$" SHA256SUMS | shasum -a 256 -c -
       - name: Install PHP if the image has none
         run: |
@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download and verify release binary
         run: |
-          curl -fsSLO "$BASE/php2shell-check_freebsd_amd64" && curl -fsSLO "$BASE/SHA256SUMS"
+          curl --retry 5 --retry-all-errors -fsSLO "$BASE/php2shell-check_freebsd_amd64" && curl --retry 5 --retry-all-errors -fsSLO "$BASE/SHA256SUMS"
           grep " php2shell-check_freebsd_amd64\$" SHA256SUMS | sha256sum -c -
       - uses: vmactions/freebsd-vm@v1
         with:
@@ -86,8 +86,8 @@ jobs:
       - name: Download and verify release binary
         run: |
           $ErrorActionPreference = "Stop"
-          Invoke-WebRequest "$env:BASE/${{ matrix.asset }}" -OutFile ${{ matrix.asset }}
-          Invoke-WebRequest "$env:BASE/SHA256SUMS" -OutFile SHA256SUMS
+          Invoke-WebRequest "$env:BASE/${{ matrix.asset }}" -OutFile ${{ matrix.asset }} -MaximumRetryCount 5 -RetryIntervalSec 10
+          Invoke-WebRequest "$env:BASE/SHA256SUMS" -OutFile SHA256SUMS -MaximumRetryCount 5 -RetryIntervalSec 10
           $want = ((Get-Content SHA256SUMS | Where-Object { $_ -match " ${{ matrix.asset }}$" }) -split "\s+")[0]
           $got = (Get-FileHash ${{ matrix.asset }} -Algorithm SHA256).Hash.ToLower()
           if ($got -ne $want) { throw "checksum mismatch: $got != $want" }
@@ -95,9 +95,9 @@ jobs:
       - name: Install official PHP into C:\php (a standard location, not on PATH)
         run: |
           $ErrorActionPreference = "Stop"
-          $rel = Invoke-RestMethod https://windows.php.net/downloads/releases/releases.json
+          $rel = Invoke-RestMethod https://windows.php.net/downloads/releases/releases.json -MaximumRetryCount 5 -RetryIntervalSec 10
           $zip = $rel.'8.3'.'nts-vs16-x64'.zip.path
-          Invoke-WebRequest "https://windows.php.net/downloads/releases/$zip" -OutFile php.zip
+          Invoke-WebRequest "https://windows.php.net/downloads/releases/$zip" -OutFile php.zip -MaximumRetryCount 5 -RetryIntervalSec 10
           Expand-Archive php.zip -DestinationPath C:\php -Force
       - name: Scan
         run: |
