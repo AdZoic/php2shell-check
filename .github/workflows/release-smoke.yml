@@ -42,6 +42,19 @@ jobs:
           fi
           command -v jq >/dev/null || { command -v apt-get >/dev/null && sudo apt-get install -y -qq jq || brew install jq; }
       - run: sh scripts/smoke.sh ./${{ matrix.asset }} "$TAG" "$(command -v php)"
+      - name: Back-port path (Ubuntu) - patched noble-security package must read as PATCHED_BACKPORT
+        if: startsWith(matrix.runner, 'ubuntu')
+        run: |
+          echo "before: $(dpkg-query -W php8.3-cli)"
+          sudo apt-get update -qq
+          v=$(apt-cache madison php8.3-cli | awk '/noble-security/ {print $3; exit}')
+          echo "noble-security php8.3-cli: $v"
+          sudo apt-get install -y -qq --allow-downgrades "php8.3-cli=$v" "php8.3-common=$v" "php8.3-opcache=$v" "php8.3-readline=$v"
+          echo "after:  $(dpkg-query -W php8.3-cli)"
+          zcat /usr/share/doc/php8.3-common/changelog.Debian.gz | grep -m2 'CVE-2026-1096' || true
+          ./${{ matrix.asset }} --no-color || true
+          ./${{ matrix.asset }} --json > after.json || true
+          jq -e '[.targets[0].installations[] | select(.real_path == "/usr/bin/php8.3" and .verdict.status == "PATCHED_BACKPORT")] | length == 1' after.json
 
   freebsd:
     runs-on: ubuntu-24.04
