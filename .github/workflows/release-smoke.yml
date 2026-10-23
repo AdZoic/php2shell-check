@@ -1,0 +1,105 @@
+name: release-smoke
+
+# Runs the published release binaries (not a fresh build) on every OS we ship
+# for, each against a real PHP install. Called by ci.yml after a release, and
+# runnable by hand for any existing tag.
+on:
+  workflow_call:
+    inputs:
+      tag: { type: string, required: true }
+  workflow_dispatch:
+    inputs:
+      tag: { description: "Release tag, e.g. v1.0.1", type: string, required: true }
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag }}
+  BASE: https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag }}
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, asset: php2shell-check_linux_amd64 }
+          - { runner: ubuntu-24.04-arm, asset: php2shell-check_linux_arm64 }
+          - { runner: macos-15-intel, asset: php2shell-check_darwin_amd64 }
+          - { runner: macos-15, asset: php2shell-check_darwin_arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify release binary
+        run: |
+          curl -fsSLO "$BASE/${{ matrix.asset }}" && curl -fsSLO "$BASE/SHA256SUMS"
+          grep " ${{ matrix.asset }}\$" SHA256SUMS | shasum -a 256 -c -
+      - name: Install PHP if the image has none
+        run: |
+          if ! command -v php >/dev/null; then
+            if command -v apt-get >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y -qq php-cli; else brew install php; fi
+          fi
+          command -v jq >/dev/null || { command -v apt-get >/dev/null && sudo apt-get install -y -qq jq || brew install jq; }
+      - run: sh scripts/smoke.sh ./${{ matrix.asset }} "$TAG" "$(command -v php)"
+
+  freebsd:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and verify release binary
+        run: |
+          curl -fsSLO "$BASE/php2shell-check_freebsd_amd64" && curl -fsSLO "$BASE/SHA256SUMS"
+          grep " php2shell-check_freebsd_amd64\$" SHA256SUMS | sha256sum -c -
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          envs: TAG
+          usesh: true
+          prepare: pkg install -y php83 jq
+          run: sh scripts/smoke.sh ./php2shell-check_freebsd_amd64 "$TAG" /usr/local/bin/php
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-2025, asset: php2shell-check_windows_amd64.exe }
+          - { runner: windows-11-arm, asset: php2shell-check_windows_arm64.exe }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Download and verify release binary
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest "$env:BASE/${{ matrix.asset }}" -OutFile ${{ matrix.asset }}
+          Invoke-WebRequest "$env:BASE/SHA256SUMS" -OutFile SHA256SUMS
+          $want = ((Get-Content SHA256SUMS | Where-Object { $_ -match " ${{ matrix.asset }}$" }) -split "\s+")[0]
+          $got = (Get-FileHash ${{ matrix.asset }} -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $want) { throw "checksum mismatch: $got != $want" }
+          "checksum OK"
+      - name: Install official PHP into C:\php (a standard location, not on PATH)
+        run: |
+          $ErrorActionPreference = "Stop"
+          $rel = Invoke-RestMethod https://windows.php.net/downloads/releases/releases.json
+          $zip = $rel.'8.3'.'nts-vs16-x64'.zip.path
+          Invoke-WebRequest "https://windows.php.net/downloads/releases/$zip" -OutFile php.zip
+          Expand-Archive php.zip -DestinationPath C:\php -Force
+      - name: Scan
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bin = ".\${{ matrix.asset }}"
+          $v = & $bin version; $v
+          if ($v -notmatch "php2shell-check $($env:TAG.TrimStart('v')) ") { throw "wrong version" }
+          $want = & C:\php\php.exe -n -r 'echo PHP_VERSION;'
+          "PHP reports $want"
+          & $bin --no-color --verbose
+          $json = & $bin --json | Out-String
+          $code = $LASTEXITCODE
+          "exit code $code"
+          if ($code -gt 2) { throw "scan error" }
+          $found = (ConvertFrom-Json $json).targets[0].installations | Where-Object { $_.version -eq $want }
+          if (-not $found) { throw "no installation reported version $want" }
+          "PASS: found PHP $want at $($found[0].real_path)"
+          exit 0 # the scan's own exit code (1 = vulnerable PHP found) is not a test failure
