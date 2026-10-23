@@ -1,0 +1,70 @@
+name: php2shell-check
+description: Fail the build if a PHP container image (or the runner) is vulnerable to PHP2Shell (CVE-2026-109618 / CVE-2026-109619).
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  images:
+    description: Space-separated container images to scan. Leave empty to scan the runner host.
+    required: false
+    default: ""
+  fail-on:
+    description: "Fail on: 'vulnerable' (exit 1 only) or 'attention' (also unverified builds / stale workers)."
+    required: false
+    default: vulnerable
+  version:
+    description: Release tag to download (e.g. v1.0.0). Defaults to latest.
+    required: false
+    default: latest
+
+outputs:
+  result:
+    description: SAFE, VULNERABLE, ATTENTION, SCAN_ERROR or NO_PHP_FOUND
+    value: ${{ steps.scan.outputs.result }}
+  report:
+    description: Path to the JSON report
+    value: ${{ steps.scan.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install php2shell-check
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ inputs.version }}
+        REPO: ${{ github.action_repository }}
+      run: |
+        set -euo pipefail
+        os=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]'); [ "$os" = macos ] && os=darwin
+        arch=$(echo "$RUNNER_ARCH" | tr '[:upper:]' '[:lower:]'); [ "$arch" = x64 ] && arch=amd64
+        ext=""; [ "$os" = windows ] && ext=".exe"
+        asset="php2shell-check_${os}_${arch}${ext}"
+        dir="$RUNNER_TEMP/php2shell-check"; mkdir -p "$dir"
+        tag=""; [ "$VERSION" != latest ] && tag="$VERSION"
+        gh release download $tag -R "$REPO" -p "$asset" -p SHA256SUMS -D "$dir" --clobber
+        (cd "$dir" && grep " $asset\$" SHA256SUMS | sha256sum -c -)
+        mv "$dir/$asset" "$dir/php2shell-check$ext"; chmod +x "$dir/php2shell-check$ext"
+        echo "$dir" >> "$GITHUB_PATH"
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        IMAGES: ${{ inputs.images }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        set -uo pipefail
+        report="$RUNNER_TEMP/php2shell-report.json"
+        if [ -n "$IMAGES" ]; then args=(image $IMAGES); else args=(host); fi
+        php2shell-check "${args[@]}" --no-color; code=$?
+        php2shell-check "${args[@]}" --json > "$report" || true
+        result=$(jq -r '.summary.result' "$report" 2>/dev/null || echo SCAN_ERROR)
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        case "$code" in
+          0) exit 0 ;;
+          2) [ "$FAIL_ON" = attention ] && exit 2 || exit 0 ;;
+          *) exit "$code" ;;
+        esac

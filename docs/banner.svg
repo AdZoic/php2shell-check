@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 240" width="880" height="240" role="img" aria-label="php2shell-check: find every PHP install vulnerable to PHP2Shell">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#1a1f3a"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8892bf"/>
+      <stop offset="1" stop-color="#4f5b93"/>
+    </linearGradient>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#79c0ff" stop-opacity="0"/>
+      <stop offset="0.85" stop-color="#79c0ff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#79c0ff" stop-opacity="0.7"/>
+    </linearGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#ffffff" stroke-opacity="0.04"/>
+    </pattern>
+    <clipPath id="card"><rect width="880" height="240" rx="16"/></clipPath>
+    <clipPath id="shieldClip"><path d="M110 46 L170 68 V116 C170 152 145 178 110 194 C75 178 50 152 50 116 V68 Z"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#card)">
+    <rect width="880" height="240" fill="url(#bg)"/>
+    <rect width="880" height="240" fill="url(#grid)"/>
+    <!-- scan beam sweeping across the card -->
+    <rect y="0" width="140" height="240" fill="url(#sweep)">
+      <animate attributeName="x" values="-160;900" dur="4s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  <rect x="0.5" y="0.5" width="879" height="239" rx="16" fill="none" stroke="#30363d"/>
+
+  <!-- shield -->
+  <path d="M110 46 L170 68 V116 C170 152 145 178 110 194 C75 178 50 152 50 116 V68 Z" fill="url(#shield)"/>
+  <g clip-path="url(#shieldClip)">
+    <rect x="40" y="40" width="140" height="6" fill="#ffffff" opacity="0.35">
+      <animate attributeName="y" values="40;196;40" dur="3s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  <text x="110" y="128" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="30" font-weight="700" fill="#ffffff">php</text>
+  <path d="M90 146 l14 14 l28 -30" fill="none" stroke="#3fb950" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="70" stroke-dashoffset="70">
+    <animate attributeName="stroke-dashoffset" values="70;70;0;0" keyTimes="0;0.35;0.5;1" dur="4s" repeatCount="indefinite"/>
+  </path>
+
+  <!-- title -->
+  <text x="210" y="98" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="44" font-weight="700" fill="#f0f6fc">php2shell<tspan fill="#79c0ff">-check</tspan></text>
+  <text x="212" y="132" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="18" fill="#9da7b3">Find every PHP install exposed to PHP2Shell, and know exactly what to do.</text>
+
+  <!-- status chips, pulsing in turn -->
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" font-weight="700">
+    <g>
+      <rect x="212" y="158" width="118" height="30" rx="15" fill="#ff7b72" fill-opacity="0.15" stroke="#ff7b72"/>
+      <circle cx="230" cy="173" r="5" fill="#ff7b72">
+        <animate attributeName="r" values="5;7;5" dur="1.5s" repeatCount="indefinite"/>
+      </circle>
+      <text x="242" y="178" fill="#ff7b72">VULNERABLE</text>
+    </g>
+    <g>
+      <rect x="342" y="158" width="100" height="30" rx="15" fill="#3fb950" fill-opacity="0.15" stroke="#3fb950"/>
+      <circle cx="360" cy="173" r="5" fill="#3fb950">
+        <animate attributeName="r" values="5;7;5" dur="1.5s" begin="0.5s" repeatCount="indefinite"/>
+      </circle>
+      <text x="372" y="178" fill="#3fb950">PATCHED</text>
+    </g>
+    <g>
+      <rect x="454" y="158" width="100" height="30" rx="15" fill="#e3b341" fill-opacity="0.15" stroke="#e3b341"/>
+      <circle cx="472" cy="173" r="5" fill="#e3b341">
+        <animate attributeName="r" values="5;7;5" dur="1.5s" begin="1s" repeatCount="indefinite"/>
+      </circle>
+      <text x="484" y="178" fill="#e3b341">RESTART</text>
+    </g>
+    <text x="572" y="178" font-weight="400" fill="#7d8590">CVE-2026-109618 · CVE-2026-109619</text>
+  </g>
+</svg>
